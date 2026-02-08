@@ -1,0 +1,102 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+  namespace: monitoring
+  labels:
+    app: alertmanager
+data:
+  alertmanager.yml: |
+    global:
+      resolve_timeout: 5m
+
+      # ── SMTP (email) settings ──────────────────────────────────
+      # Uncomment and fill in to enable email notifications
+      # smtp_smarthost: 'smtp.gmail.com:587'
+      # smtp_from: 'alertmanager@example.com'
+      # smtp_auth_username: 'your-email@gmail.com'
+      # smtp_auth_password: 'your-app-password'
+      # smtp_require_tls: true
+
+      # ── Slack settings ─────────────────────────────────────────
+      # Uncomment and fill in to enable Slack notifications
+      # slack_api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
+
+    # Templates for notification formatting
+    templates:
+      - '/etc/alertmanager/templates/*.tmpl'
+
+    # Routing tree
+    route:
+      receiver: default-receiver
+      group_by: ['alertname', 'namespace', 'severity']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+
+      routes:
+        # Critical alerts → high-priority channel
+        - receiver: critical-receiver
+          match:
+            severity: critical
+          group_wait: 10s
+          repeat_interval: 1h
+
+        # Warning alerts → standard channel
+        - receiver: warning-receiver
+          match:
+            severity: warning
+          repeat_interval: 4h
+
+    # Inhibition rules – suppress lower-severity duplicates
+    inhibit_rules:
+      - source_match:
+          severity: critical
+        target_match:
+          severity: warning
+        equal: ['alertname', 'namespace']
+
+    # ── Receivers ─────────────────────────────────────────────────
+    receivers:
+      - name: default-receiver
+        # Webhook receiver (works out of the box for testing)
+        webhook_configs:
+          - url: 'http://localhost:5001/'
+            send_resolved: true
+
+      - name: critical-receiver
+        # ── Slack (uncomment to enable) ──
+        # slack_configs:
+        #   - channel: '#alerts-critical'
+        #     send_resolved: true
+        #     title: '{{ .Status | toUpper }}: {{ .CommonLabels.alertname }}'
+        #     text: >-
+        #       *Severity:* {{ .CommonLabels.severity }}
+        #       *Namespace:* {{ .CommonLabels.namespace }}
+        #       *Description:* {{ .CommonAnnotations.description }}
+        #     color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+
+        # ── Email (uncomment to enable) ──
+        # email_configs:
+        #   - to: 'oncall-team@example.com'
+        #     send_resolved: true
+        #     headers:
+        #       Subject: '[CRITICAL] {{ .CommonLabels.alertname }}'
+
+        webhook_configs:
+          - url: 'http://localhost:5001/'
+            send_resolved: true
+
+      - name: warning-receiver
+        # ── Slack (uncomment to enable) ──
+        # slack_configs:
+        #   - channel: '#alerts-warning'
+        #     send_resolved: true
+        #     title: '{{ .Status | toUpper }}: {{ .CommonLabels.alertname }}'
+        #     text: >-
+        #       *Severity:* {{ .CommonLabels.severity }}
+        #       *Description:* {{ .CommonAnnotations.description }}
+
+        webhook_configs:
+          - url: 'http://localhost:5001/'
+            send_resolved: true
